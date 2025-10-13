@@ -1,0 +1,45 @@
+# --- Fichiers de compilation ---
+*.o
+*.elf
+*.eep
+*.hex
+*.map
+*.lst
+*.lss
+*.srec
+
+# --- Dossiers de build courants ---
+/build
+/build-*/
+/Debug
+/Release
+/obj
+/out
+
+# --- Makefiles générés automatiquement ---
+Makefile~
+*.d
+
+# --- PlatformIO ---
+.pio
+.vscode/.browse.c_cpp.*
+
+# --- Atmel Studio / Microchip Studio ---
+*.atsuo
+*.atsln
+*.asproj
+*.asproj.user
+*.dep
+*.log
+
+# --- Visual Studio Code ---
+.vscode/
+
+# --- Sauvegardes / temporaires ---
+*~
+*.swp
+*.tmp
+
+# --- Mac / Linux spécifiques ---
+.DS_Store
+Thumbs.db
