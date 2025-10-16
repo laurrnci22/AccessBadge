@@ -12,14 +12,15 @@
 #define BOUTON5 PB5
 #define BOUTON6 PB6
 
+void turnScreen(void); // affichage des messages à l'ecran
+void turnLight(void); // allumer les LEDs
+
 int main(void) {
-  // appel des méthodes
+  // appel des méthodes 
   return 0;
 }
 
-
-/* Méthode permettant d'afficher des messages à l'écran */
-int turnScreen(void) 
+void turnScreen(void) 
 {
     GLCD_Setup();
     GLCD_SetFont(Font5x8, 5, 8, GLCD_Overwrite);
@@ -38,7 +39,6 @@ int turnScreen(void)
     }
 }
 
-/* Méthode permettant d'allumer les LEDs en appuyant sur les boutons */
 void turnLight(void) {
   CLKPR = 0b10000000; // modification du diviseur d'horloge (CLKPCE=1)
   CLKPR = 0;          // modification du diviseur d'horloge (CLKPCE=1)
