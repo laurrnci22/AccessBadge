@@ -3,13 +3,13 @@ export LD = avr-gcc
 export MCU = atmega32u4
 export FCPU = 16000000
 export FLAGS = -mmcu=$(MCU)
-export CFLAGS = -Wall $(FLAGS) -DF_CPU=$(FCPU) -Os
+export INCLUDES = -Ilibs/ssd1306
+export CFLAGS = -Wall $(FLAGS) -DF_CPU=$(FCPU) -Os $(INCLUDES)
 export LDFLAGS = $(FLAGS)
-
 export PROGRAMMER = dfu-programmer
 
 TARGET = main
-SOURCES = $(wildcard *.c)
+SOURCES = $(wildcard *.c libs/ssd1306/*.c)
 OBJECTS = $(SOURCES:.c=.o)
 
 all: $(TARGET).hex

@@ -1,5 +1,7 @@
 #include <avr/io.h>
 #include <util/delay.h>
+#include "SSD1306.h"
+#include "Font5x8.h"
 
 #define LED4 PD4
 #define LED5 PD5
@@ -10,9 +12,34 @@
 #define BOUTON5 PB5
 #define BOUTON6 PB6
 
-int main(void)
-{
+int main(void) {
+  // appel des méthodes
+  return 0;
+}
 
+
+/* Méthode permettant d'afficher des messages à l'écran */
+int turnScreen(void) 
+{
+    GLCD_Setup();
+    GLCD_SetFont(Font5x8, 5, 8, GLCD_Overwrite);
+
+    GLCD_Clear();
+
+    GLCD_GotoXY(0, 0);
+
+    GLCD_PrintString("Bonjour !");
+
+    GLCD_Render();
+
+    while(1)
+    {
+        _delay_ms(1000);
+    }
+}
+
+/* Méthode permettant d'allumer les LEDs en appuyant sur les boutons */
+void turnLight(void) {
   CLKPR = 0b10000000; // modification du diviseur d'horloge (CLKPCE=1)
   CLKPR = 0;          // modification du diviseur d'horloge (CLKPCE=1)
 

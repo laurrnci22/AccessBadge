@@ -7,7 +7,7 @@
 *.lst
 *.lss
 *.srec
-
+/libs/ssd1306/*.o
 # --- Dossiers de build courants ---
 /build
 /build-*/
