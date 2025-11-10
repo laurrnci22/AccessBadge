@@ -47,3 +47,8 @@ flash: all
 	sudo dfu-programmer $(MCU) erase
 	sudo dfu-programmer $(MCU) flash $(TARGET).hex
 	sudo dfu-programmer $(MCU) reset
+
+# Tester la communication PC <-> LUFA
+test:
+	gcc -o lufa_comm lufa_comm.c -lusb-1.0
+	sudo ./lufa_comm

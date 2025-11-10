@@ -47,8 +47,8 @@
 		 #define MYOUT_EPADDR	(ENDPOINT_DIR_OUT|2)
  
 		 /** Size in bytes of data endpoints. */
-		 #define MYIN_EPSIZE	1
-		 #define MYOUT_EPSIZE	1
+		 #define MYIN_EPSIZE	8
+		 #define MYOUT_EPSIZE	8
  
  
 	 /* Type Defines: */

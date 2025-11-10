@@ -42,17 +42,28 @@
   *  enters a loop to run the application tasks in sequence.
   */
  int main(void)
- {
-   SetupHardware();
- 
-   GlobalInterruptEnable();
- 
-   for (;;)
-   {
-     USB_USBTask();
-   }
- }
- 
+{
+    SetupHardware();
+    GlobalInterruptEnable();
+
+    for (;;)
+    {
+        USB_USBTask();
+
+        Endpoint_SelectEndpoint(MYOUT_EPADDR);
+        if (Endpoint_IsOUTReceived())
+        {
+            uint8_t buf[MYOUT_EPSIZE];
+            Endpoint_Read_Stream_LE(buf, MYOUT_EPSIZE, NULL);
+            Endpoint_ClearOUT();
+
+            Endpoint_SelectEndpoint(MYIN_EPADDR);
+            Endpoint_Write_Stream_LE(buf, MYIN_EPSIZE, NULL);
+            Endpoint_ClearIN();
+        }
+    }
+}
+
  /** Configures the board hardware and chip peripherals for the demo's functionality. */
  void SetupHardware(void)
  {
@@ -96,6 +107,8 @@
   */
  void EVENT_USB_Device_ConfigurationChanged(void)
  {
+     Endpoint_ConfigureEndpoint(MYIN_EPADDR,  EP_TYPE_INTERRUPT, MYIN_EPSIZE, 1);
+     Endpoint_ConfigureEndpoint(MYOUT_EPADDR, EP_TYPE_INTERRUPT, MYOUT_EPSIZE, 1);
  }
  
  /** Event handler for the USB_ControlRequest event. This is used to catch and process control requests sent to
