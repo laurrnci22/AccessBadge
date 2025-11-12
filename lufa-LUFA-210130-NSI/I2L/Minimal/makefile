@@ -5,11 +5,7 @@
 #  dean [at] fourwalledcubicle [dot] com
 #           www.lufa-lib.org
 #
-# --------------------------------------
-#         LUFA Project Makefile.
-# --------------------------------------
 
-# Run "make help" for target help.
 
 MCU          = atmega32u4
 ARCH         = AVR8
@@ -18,20 +14,33 @@ F_CPU        = 16000000
 F_USB        = $(F_CPU)
 OPTIMIZATION = s
 TARGET       = Minimal
-SRC          = $(TARGET).c Descriptors.c $(LUFA_SRC_USB)
-LUFA_PATH    = ../../LUFA
-CC_FLAGS     = -DUSE_LUFA_CONFIG_HEADER -IConfig/
-LD_FLAGS     =
 
-# Default target
+# SSD1306
+SSD1306_LIB_DIR = libs/libssd1306-atmega328p
+SSD1306_INC_DIR = $(SSD1306_LIB_DIR)/include
+
+#pn532 library
+PN532_LIB_DIR = libs/libpn532-atmega328p
+PN532_INC_DIR = $(PN532_LIB_DIR)/include
+
+# Sources
+SRC          = $(TARGET).c Descriptors.c $(LUFA_SRC_USB)
+
+LUFA_PATH    = ../../LUFA
+
+
+CC_FLAGS     = -DUSE_LUFA_CONFIG_HEADER -DF_CPU=$(F_CPU) -IConfig/ -I$(SSD1306_INC_DIR) -I$(PN532_INC_DIR)
+
+
+LD_FLAGS     = -L$(SSD1306_LIB_DIR) -lssd1306 -L$(PN532_LIB_DIR) -lpn532
+
+
 all:
 
-# Include LUFA-specific DMBS extension modules
 DMBS_LUFA_PATH ?= $(LUFA_PATH)/Build/LUFA
 include $(DMBS_LUFA_PATH)/lufa-sources.mk
 include $(DMBS_LUFA_PATH)/lufa-gcc.mk
 
-# Include common DMBS build system modules
 DMBS_PATH      ?= $(LUFA_PATH)/Build/DMBS/DMBS
 include $(DMBS_PATH)/core.mk
 include $(DMBS_PATH)/cppcheck.mk
@@ -42,13 +51,22 @@ include $(DMBS_PATH)/hid.mk
 include $(DMBS_PATH)/avrdude.mk
 include $(DMBS_PATH)/atprogram.mk
 
-# Flash the device using dfu-programmer
 flash: all
 	sudo dfu-programmer $(MCU) erase
 	sudo dfu-programmer $(MCU) flash $(TARGET).hex
 	sudo dfu-programmer $(MCU) reset
 
-# Tester la communication PC <-> LUFA
+UNAME_S := $(shell uname -s)
+ifeq ($(UNAME_S),Darwin)
+    LIBUSB_CFLAGS := -I$(shell brew --prefix libusb)/include
+    LIBUSB_LDFLAGS := -L$(shell brew --prefix libusb)/lib
+else
+    LIBUSB_CFLAGS :=
+    LIBUSB_LDFLAGS :=
+endif
+
 test:
-	gcc -o lufa_comm lufa_comm.c -lusb-1.0
+	gcc $(LIBUSB_CFLAGS) $(LIBUSB_LDFLAGS) -o lufa_comm lufa_comm.c -lusb-1.0
 	sudo ./lufa_comm
+
+
