@@ -7,7 +7,6 @@
 #
 
 
-
 MCU          = atmega32u4
 ARCH         = AVR8
 BOARD        = NONE
@@ -17,11 +16,11 @@ OPTIMIZATION = s
 TARGET       = Minimal
 
 # SSD1306
-SSD1306_LIB_DIR = libs/ssd1306-libs
+SSD1306_LIB_DIR = libs/libssd1306-atmega328p
 SSD1306_INC_DIR = $(SSD1306_LIB_DIR)/include
 
 #pn532 library
-PN532_LIB_DIR = libs/pn532-libs
+PN532_LIB_DIR = libs/libpn532-atmega328p
 PN532_INC_DIR = $(PN532_LIB_DIR)/include
 
 # Sources
@@ -67,6 +66,7 @@ else
 endif
 
 test:
-	gcc $(LIBUSB_CFLAGS) $(LIBUSB_LDFLAGS) -o lufa_test test.c -lusb-1.0
-	sudo ./lufa_test
+	gcc $(LIBUSB_CFLAGS) $(LIBUSB_LDFLAGS) -o lufa_comm lufa_comm.c -lusb-1.0
+	sudo ./lufa_comm
+
 
