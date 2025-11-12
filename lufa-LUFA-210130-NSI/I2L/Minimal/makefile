@@ -14,6 +14,7 @@ F_CPU        = 16000000
 F_USB        = $(F_CPU)
 OPTIMIZATION = s
 TARGET       = Minimal
+export FCPU  = 16000000
 
 # SSD1306
 SSD1306_LIB_DIR = libs/libssd1306-atmega328p
