@@ -11,88 +11,15 @@
 #include "ssd1306.h"
 #include "ssd1306_text.h"
 #include "pn532_i2c.h"
+#include "hardware.h"
+#include "menu.h"
 
-#define LED4 PD4
-#define LED5 PD5
-#define LED6 PD6
-
-#define BTN_UP PB4
-#define BTN_UP2 PB6
-#define BTN_DOWN PC6
-#define BTN_DOWN2 PB5
-#define BTN_SELECT PE6
-
-#define DEBOUNCE_MS 5
-#define WELCOME_DELAY 200
-#define INIT_DELAY 500
-#define SELECTION_DELAY 1000
-
-typedef enum {
-    MENU_WRITE = 0,
-    MENU_READ = 1,
-    MENU_INFOS = 2,
-    MENU_COUNT = 3
-} MenuOption;
 
 PN532 pn532;
 
 static const uint8_t KEY_DEFAULT[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
 
-/* ======================== BOUTONS ======================== */
 
-void init_buttons(void) {
-    DDRB &= ~((1 << BTN_UP) | (1 << BTN_UP2) | (1 << BTN_DOWN2));
-    PORTB |= (1 << BTN_UP) | (1 << BTN_UP2) | (1 << BTN_DOWN2);
-
-    DDRC &= ~(1 << BTN_DOWN);
-    PORTC |= (1 << BTN_DOWN);
-
-    DDRE &= ~(1 << BTN_SELECT);
-    PORTE |= (1 << BTN_SELECT);
-
-    DDRD |= (1 << LED4) | (1 << LED5) | (1 << LED6);
-}
-
-uint8_t button_debounce(volatile uint8_t *port_reg, uint8_t pin) {
-    if (!((*port_reg) & (1 << pin))) {
-        _delay_ms(DEBOUNCE_MS);
-        if (!((*port_reg) & (1 << pin))) {
-            while (!((*port_reg) & (1 << pin)));
-            _delay_ms(DEBOUNCE_MS);
-            return 1;
-        }
-    }
-    return 0;
-}
-
-uint8_t button_up_pressed(void) {
-    return button_debounce(&PINB, BTN_UP) || button_debounce(&PINB, BTN_UP2);
-}
-
-uint8_t button_down_pressed(void) {
-    return button_debounce(&PINC, BTN_DOWN) || button_debounce(&PINB, BTN_DOWN2);
-}
-
-uint8_t button_select_pressed(void) {
-    return button_debounce(&PINE, BTN_SELECT);
-}
-
-/* ======================== AFFICHAGE MENU ======================== */
-
-void display_menu(MenuOption selected) {
-    ssd1306_clear_page(2);
-    ssd1306_clear_page(4);
-    ssd1306_clear_page(6);
-
-    ssd1306_print_utf8_center(
-        selected == MENU_WRITE ? "> 1. Ecrire <" : "  1. Ecrire  ", 2);
-
-    ssd1306_print_utf8_center(
-        selected == MENU_READ ? "> 2. Lire <" : "  2. Lire  ", 4);
-
-    ssd1306_print_utf8_center(
-        selected == MENU_INFOS ? "> 3. Infos <" : "  3. Infos  ", 6);
-}
 
 void show_message(const char *msg) {
     ssd1306_clear();
@@ -139,7 +66,7 @@ bool init_pn532(PN532* pn532, uint8_t* fw_buff) {
 }
 
 int32_t detect_card(PN532* pn532, uint8_t* uid) {
-    return PN532_ReadPassiveTarget(pn532, uid, PN532_MIFARE_ISO14443A, 1000);
+    return PN532_ReadPassiveTarget(pn532, uid, PN532_MIFARE_ISO14443A, DETECT_DELAY);
 }
 
 void usb_log(const char *msg) {
@@ -160,15 +87,89 @@ void usb_log(const char *msg) {
 
 void action_write(void) {
     uint8_t uid[MIFARE_UID_MAX_LENGTH];
-    const uint8_t block_num = 5;
-    const char* message = "Hello RFID!";
+    uint8_t usb_buffer[64];
+    const uint8_t name_block = 1;
+    const uint8_t prenom_block = 2;
+    const uint8_t password_block = 5;
 
     ssd1306_clear();
-    ssd1306_print_utf8_center("Approchez carte", 2);
-    ssd1306_print_utf8_center("pour ecrire...", 4);
+    ssd1306_print_utf8_center("En attente", 2);
+    ssd1306_print_utf8_center("donnees USB...", 4);
 
     PORTD |= (1 << LED4);
 
+    // Attendre UN SEUL paquet de 64 octets
+    bool received = false;
+    for (int timeout = 0; timeout < 200; timeout++) {
+        USB_USBTask();
+        Endpoint_SelectEndpoint(MYOUT_EPADDR);
+
+        if (Endpoint_IsOUTReceived()) {
+            uint8_t bytes_available = Endpoint_BytesInEndpoint();
+            if (bytes_available >= 52) { // 4 (header) + 48 (data max)
+                Endpoint_Read_Stream_LE(usb_buffer, 64, NULL);
+                Endpoint_ClearOUT();
+                received = true;
+                break;
+            }
+        }
+        _delay_ms(50);
+    }
+
+    if (!received) {
+        show_message("Timeout USB");
+        _delay_ms(1500);
+        PORTD &= ~(1 << LED4);
+        ssd1306_clear();
+        return;
+    }
+
+    // Vérifier commande 'W' (Write)
+    if (usb_buffer[0] != 'W') {
+        show_message("Commande invalide");
+        _delay_ms(1500);
+        PORTD &= ~(1 << LED4);
+        ssd1306_clear();
+        return;
+    }
+
+    // Extraire longueurs
+    uint8_t name_len = usb_buffer[1];
+    uint8_t prenom_len = usb_buffer[2];
+    uint8_t password_len = usb_buffer[3];
+
+    if (name_len > 16 || prenom_len > 16 || password_len > 16) {
+        show_message("Donnees trop longues");
+        _delay_ms(1500);
+        PORTD &= ~(1 << LED4);
+        ssd1306_clear();
+        return;
+    }
+
+    // Préparer les blocs (données à partir de l'octet 4)
+    uint8_t name_data[16], prenom_data[16], password_data[16];
+    memset(name_data, 0, 16);
+    memset(prenom_data, 0, 16);
+    memset(password_data, 0, 16);
+
+    memcpy(name_data, &usb_buffer[4], name_len);
+    memcpy(prenom_data, &usb_buffer[4 + 16], prenom_len);
+    memcpy(password_data, &usb_buffer[4 + 32], password_len);
+
+    // Afficher les données reçues
+    ssd1306_clear();
+    char display[32];
+    sprintf(display, "Nom: %s", name_data);
+    ssd1306_print_utf8_center(display, 1);
+    sprintf(display, "Prenom: %s", prenom_data);
+    ssd1306_print_utf8_center(display, 3);
+    sprintf(display, "Pass: %s", password_data);
+    ssd1306_print_utf8_center(display, 5);
+    ssd1306_print_utf8_center("Approchez carte", 7);
+
+    _delay_ms(1000);
+
+    // Détecter la carte
     int32_t uid_len = detect_card(&pn532, uid);
     if (uid_len <= 0) {
         show_message("Pas de carte");
@@ -178,17 +179,38 @@ void action_write(void) {
         return;
     }
 
-    char uid_str[32] = {0};
-    for (int i = 0; i < uid_len; i++) {
-        char tmp[4];
-        sprintf(tmp, "%02X", uid[i]);
-        strcat(uid_str, tmp);
-    }
-    usb_log(uid_str);
-
     show_message("Ecriture...");
 
-    if (write_text_to_block(&pn532, uid, uid_len, block_num, message)) {
+    bool success = true;
+
+    // Écrire nom (bloc 1)
+    if (!write_text_to_block(&pn532, uid, uid_len, name_block, (char*)name_data)) {
+        success = false;
+    }
+
+    // Écrire prénom (bloc 2)
+    if (success && !write_text_to_block(&pn532, uid, uid_len, prenom_block, (char*)prenom_data)) {
+        success = false;
+    }
+
+    // Écrire password (bloc 5)
+    if (success && !write_text_to_block(&pn532, uid, uid_len, password_block, (char*)password_data)) {
+        success = false;
+    }
+
+    // Envoyer confirmation USB
+    uint8_t response[64];
+    memset(response, 0, 64);
+    response[0] = 'W';
+    response[1] = success ? 0x01 : 0x00;
+
+    Endpoint_SelectEndpoint(MYIN_EPADDR);
+    if (Endpoint_IsINReady()) {
+        Endpoint_Write_Stream_LE(response, 64, NULL);
+        Endpoint_ClearIN();
+    }
+
+    if (success) {
         show_message("Ecriture OK!");
     } else {
         show_message("Erreur ecriture");
@@ -199,10 +221,14 @@ void action_write(void) {
     ssd1306_clear();
 }
 
+
+
 void action_read(void) {
     uint8_t uid[MIFARE_UID_MAX_LENGTH];
     uint8_t block_data[16];
-    const uint8_t block_num = 5;
+    const uint8_t name_block = 1;
+    const uint8_t prenom_block = 2;
+    const uint8_t password_block = 5;
 
     ssd1306_clear();
     ssd1306_print_utf8_center("Approchez carte", 2);
@@ -219,35 +245,101 @@ void action_read(void) {
         return;
     }
 
-    show_message("Lecture...");
+    ssd1306_clear();
 
-    if (read_block(&pn532, uid, uid_len, block_num, block_data)) {
-        ssd1306_clear();
-        char line[32];
+    // Afficher UID
+    char uid_str[32] = "UID: ";
+    for (int i = 0; i < uid_len; i++) {
+        char tmp[4];
+        sprintf(tmp, "%02X", uid[i]);
+        strcat(uid_str, tmp);
+        if (i < uid_len - 1) strcat(uid_str, " ");
+    }
+    ssd1306_print_utf8_center(uid_str, 1);
 
-        sprintf(line, "Bloc %d:", block_num);
-        ssd1306_print_utf8_center(line, 1);
+    // Préparer buffer USB (64 octets)
+    uint8_t usb_buffer[64];
+    memset(usb_buffer, 0, 64);
+    usb_buffer[0] = 'R'; // Type: Read
 
-        sprintf(line, "%02X%02X %02X%02X %02X%02X %02X%02X",
-                block_data[0], block_data[1], block_data[2], block_data[3],
-                block_data[4], block_data[5], block_data[6], block_data[7]);
-        ssd1306_print_utf8_center(line, 3);
-
-        sprintf(line, "%02X%02X %02X%02X %02X%02X %02X%02X",
-                block_data[8], block_data[9], block_data[10], block_data[11],
-                block_data[12], block_data[13], block_data[14], block_data[15]);
-        ssd1306_print_utf8_center(line, 5);
-    } else {
-        show_message("Erreur lecture");
+    // UID (octets 1-7)
+    for (int i = 0; i < uid_len && i < 7; i++) {
+        usb_buffer[1 + i] = uid[i];
     }
 
-    _delay_ms(SELECTION_DELAY);
+    // Lire nom (bloc 1) -> octets 8-23
+    if (read_block(&pn532, uid, uid_len, name_block, block_data)) {
+        memcpy(&usb_buffer[8], block_data, 16);
+
+        // Afficher nom
+        char name[17];
+        memset(name, 0, sizeof(name));
+        memcpy(name, block_data, 16);
+        for (int i = 0; i < 16; i++) {
+            if (!isprint(name[i])) name[i] = ' ';
+        }
+        char name_line[32];
+        sprintf(name_line, "Nom: %s", name);
+        ssd1306_print_utf8_center(name_line, 3);
+    } else {
+        ssd1306_print_utf8_center("Nom: Erreur", 3);
+    }
+
+    // Lire prénom (bloc 2) -> octets 24-39
+    if (read_block(&pn532, uid, uid_len, prenom_block, block_data)) {
+        memcpy(&usb_buffer[24], block_data, 16);
+
+        // Afficher prénom
+        char prenom[17];
+        memset(prenom, 0, sizeof(prenom));
+        memcpy(prenom, block_data, 16);
+        for (int i = 0; i < 16; i++) {
+            if (!isprint(prenom[i])) prenom[i] = ' ';
+        }
+        char prenom_line[32];
+        sprintf(prenom_line, "Prenom: %s", prenom);
+        ssd1306_print_utf8_center(prenom_line, 5);
+    } else {
+        ssd1306_print_utf8_center("Prenom: Erreur", 5);
+    }
+
+    // Lire password (bloc 5) -> octets 40-55
+    if (read_block(&pn532, uid, uid_len, password_block, block_data)) {
+        memcpy(&usb_buffer[40], block_data, 16);
+
+        // Afficher password
+        char password[17];
+        memset(password, 0, sizeof(password));
+        memcpy(password, block_data, 16);
+        for (int i = 0; i < 16; i++) {
+            if (!isprint(password[i])) password[i] = ' ';
+        }
+        char password_line[32];
+        sprintf(password_line, "Pass: %s", password);
+        ssd1306_print_utf8_center(password_line, 7);
+    } else {
+        ssd1306_print_utf8_center("Pass: Erreur", 7);
+    }
+
+    // Envoyer via USB
+    Endpoint_SelectEndpoint(MYIN_EPADDR);
+    if (Endpoint_IsINReady()) {
+        Endpoint_Write_Stream_LE(usb_buffer, 64, NULL);
+        Endpoint_ClearIN();
+    }
+
+    _delay_ms(SELECTION_DELAY * 2); // Affichage plus long
     PORTD &= ~(1 << LED5);
     ssd1306_clear();
 }
 
+
+
 void action_infos(void) {
     uint8_t uid[MIFARE_UID_MAX_LENGTH];
+    uint8_t block_data[16];
+    const uint8_t name_block = 1;
+    const uint8_t prenom_block = 2;
 
     ssd1306_clear();
     ssd1306_print_utf8_center("Approchez carte", 2);
@@ -258,7 +350,7 @@ void action_infos(void) {
     int32_t uid_len = detect_card(&pn532, uid);
     if (uid_len <= 0) {
         show_message("Pas de carte");
-        _delay_ms(1500);
+        _delay_ms(500);
         PORTD &= ~(1 << LED6);
         ssd1306_clear();
         return;
@@ -266,6 +358,7 @@ void action_infos(void) {
 
     ssd1306_clear();
 
+    // Afficher UID
     char uid_str[32] = "UID: ";
     for (int i = 0; i < uid_len; i++) {
         char tmp[4];
@@ -273,10 +366,37 @@ void action_infos(void) {
         strcat(uid_str, tmp);
         if (i < uid_len - 1) strcat(uid_str, " ");
     }
-    ssd1306_print_utf8_center(uid_str, 2);
+    ssd1306_print_utf8_center(uid_str, 1);
 
-    ssd1306_print_utf8_center("Type: MIFARE", 4);
-    ssd1306_print_utf8_center("Status: OK", 6);
+    // Lire et afficher le nom (bloc 1)
+    if (read_block(&pn532, uid, uid_len, name_block, block_data)) {
+        char name[17];
+        memset(name, 0, sizeof(name));
+        memcpy(name, block_data, 16);
+        for (int i = 0; i < 16; i++) {
+            if (!isprint(name[i])) name[i] = ' ';
+        }
+        char name_line[32];
+        sprintf(name_line, "Nom: %s", name);
+        ssd1306_print_utf8_center(name_line, 3);
+    } else {
+        ssd1306_print_utf8_center("Nom: Erreur", 3);
+    }
+
+    // Lire et afficher le prénom (bloc 2)
+    if (read_block(&pn532, uid, uid_len, prenom_block, block_data)) {
+        char prenom[17];
+        memset(prenom, 0, sizeof(prenom));
+        memcpy(prenom, block_data, 16);
+        for (int i = 0; i < 16; i++) {
+            if (!isprint(prenom[i])) prenom[i] = ' ';
+        }
+        char prenom_line[32];
+        sprintf(prenom_line, "Prenom: %s", prenom);
+        ssd1306_print_utf8_center(prenom_line, 5);
+    } else {
+        ssd1306_print_utf8_center("Prenom: Erreur", 5);
+    }
 
     usb_log(uid_str);
 
@@ -285,27 +405,32 @@ void action_infos(void) {
     ssd1306_clear();
 }
 
+
 /* ======================== INITIALISATION ======================== */
 
 void init_system(void) {
     init_buttons();
     ssd1306_init();
+    ssd1306_clear();
 
-    show_message("Welcome!");
+    static const uint8_t page = 3;
+
+    ssd1306_print_utf8_center("Welcome!", page);
+
     _delay_ms(WELCOME_DELAY);
+    ssd1306_clear_page(page);
 
-    show_message("Initialisation...");
-    _delay_ms(INIT_DELAY);
-    ssd1306_clear_page(3);
+    ssd1306_print_utf8_center("Initialisation...", page);
 
     uint8_t fw_buff[255];
     if (!init_pn532(&pn532, fw_buff)) {
-        show_message("Erreur PN532");
+        ssd1306_print_utf8_center("Erreur PN532", page);
         while (1);
     }
 
     USB_Init();
     GlobalInterruptEnable();
+    ssd1306_clear_page(page);
 }
 
 /* ======================== MAIN ======================== */
@@ -315,7 +440,7 @@ int main(void) {
 
     init_system();
 
-    display_menu(current_selection);
+    menu_display(current_selection);
 
     while (1) {
         USB_USBTask();
@@ -323,13 +448,13 @@ int main(void) {
         if (button_up_pressed()) {
             current_selection = (current_selection == 0)
                 ? MENU_COUNT - 1 : current_selection - 1;
-            display_menu(current_selection);
+            menu_display(current_selection);
         }
 
         if (button_down_pressed()) {
             current_selection = (current_selection == MENU_COUNT - 1)
                 ? 0 : current_selection + 1;
-            display_menu(current_selection);
+            menu_display(current_selection);
         }
 
         if (button_select_pressed()) {
@@ -344,7 +469,7 @@ int main(void) {
                     action_infos();
                     break;
             }
-            display_menu(current_selection);
+            menu_display(current_selection);
         }
     }
 

@@ -47,8 +47,8 @@
 		 #define MYOUT_EPADDR	(ENDPOINT_DIR_OUT|2)
  
 		 /** Size in bytes of data endpoints. */
-		 #define MYIN_EPSIZE	8
-		 #define MYOUT_EPSIZE	8
+		 #define MYIN_EPSIZE	64
+		 #define MYOUT_EPSIZE	64
  
  
 	 /* Type Defines: */
@@ -95,5 +95,4 @@
 											 ATTR_WARN_UNUSED_RESULT ATTR_NON_NULL_PTR_ARG(3);
  
  #endif
- 
  

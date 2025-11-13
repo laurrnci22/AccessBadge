@@ -25,7 +25,7 @@ PN532_LIB_DIR = libs/libpn532-atmega328p
 PN532_INC_DIR = $(PN532_LIB_DIR)/include
 
 # Sources
-SRC          = $(TARGET).c Descriptors.c $(LUFA_SRC_USB)
+SRC          = $(TARGET).c Descriptors.c $(LUFA_SRC_USB) hardware.c menu.c # usb_comm.c nfc_operations.c
 
 LUFA_PATH    = ../../LUFA
 
