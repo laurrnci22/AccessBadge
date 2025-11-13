@@ -1,4 +1,3 @@
-
 #define  INCLUDE_FROM_MINIMAL_C
 #include "Minimal.h"
 #include <stdint.h>
@@ -6,80 +5,125 @@
 #include <string.h>
 #include <util/delay.h>
 #include <ctype.h>
+#include <stdbool.h>
+#include <avr/io.h>
 
 #include "ssd1306.h"
 #include "ssd1306_text.h"
 #include "pn532_i2c.h"
 
-/* ======================== UTILITAIRES ======================== */
+#define LED4 PD4
+#define LED5 PD5
+#define LED6 PD6
 
-void debug_log(const char* msg) {
+#define BTN_UP PB4
+#define BTN_UP2 PB6
+#define BTN_DOWN PC6
+#define BTN_DOWN2 PB5
+#define BTN_SELECT PE6
 
+#define DEBOUNCE_MS 5
+#define WELCOME_DELAY 200
+#define INIT_DELAY 500
+#define SELECTION_DELAY 1000
+
+typedef enum {
+    MENU_WRITE = 0,
+    MENU_READ = 1,
+    MENU_INFOS = 2,
+    MENU_COUNT = 3
+} MenuOption;
+
+PN532 pn532;
+
+static const uint8_t KEY_DEFAULT[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+
+/* ======================== BOUTONS ======================== */
+
+void init_buttons(void) {
+    DDRB &= ~((1 << BTN_UP) | (1 << BTN_UP2) | (1 << BTN_DOWN2));
+    PORTB |= (1 << BTN_UP) | (1 << BTN_UP2) | (1 << BTN_DOWN2);
+
+    DDRC &= ~(1 << BTN_DOWN);
+    PORTC |= (1 << BTN_DOWN);
+
+    DDRE &= ~(1 << BTN_SELECT);
+    PORTE |= (1 << BTN_SELECT);
+
+    DDRD |= (1 << LED4) | (1 << LED5) | (1 << LED6);
 }
 
-void display_text(const char* line1, const char* line2, uint16_t delay_ms) {
-    ssd1306_clear();
-    if (line1) ssd1306_print_utf8_center(line1, 1);
-    if (line2) ssd1306_print_utf8_center(line2, 2);
-    if (delay_ms) _delay_ms(300);
-}
-
-/* ======================== CONVERSION & AFFICHAGE ======================== */
-
-void hex_to_text(const uint8_t* hex_data, uint16_t length, char* text_output) {
-    for (uint16_t i = 0; i < length; i++) {
-        text_output[i] = (hex_data[i] >= 32 && hex_data[i] <= 126) ? hex_data[i] : '.';
+uint8_t button_debounce(volatile uint8_t *port_reg, uint8_t pin) {
+    if (!((*port_reg) & (1 << pin))) {
+        _delay_ms(DEBOUNCE_MS);
+        if (!((*port_reg) & (1 << pin))) {
+            while (!((*port_reg) & (1 << pin)));
+            _delay_ms(DEBOUNCE_MS);
+            return 1;
+        }
     }
-    text_output[length] = '\0';
+    return 0;
 }
 
-void display_block_data(uint8_t* block_data, uint8_t block_num) {
-    char line[32], text_line[17];
-    sprintf(line, "Bloc %d:", block_num);
-    display_text(line, NULL, 0);
-
-    sprintf(line, "%02X%02X %02X%02X %02X%02X %02X%02X",
-            block_data[0], block_data[1], block_data[2], block_data[3],
-            block_data[4], block_data[5], block_data[6], block_data[7]);
-    ssd1306_print_utf8_center(line, 2);
-
-    sprintf(line, "%02X%02X %02X%02X %02X%02X %02X%02X",
-            block_data[8], block_data[9], block_data[10], block_data[11],
-            block_data[12], block_data[13], block_data[14], block_data[15]);
-    ssd1306_print_utf8_center(line, 3);
-
-    hex_to_text(block_data, 16, text_line);
-    snprintf(line, sizeof(line), "Txt: %.12s", text_line);
-    ssd1306_print_utf8_center(line, 4);
+uint8_t button_up_pressed(void) {
+    return button_debounce(&PINB, BTN_UP) || button_debounce(&PINB, BTN_UP2);
 }
 
-/* ======================== ÉCRITURE ======================== */
+uint8_t button_down_pressed(void) {
+    return button_debounce(&PINC, BTN_DOWN) || button_debounce(&PINB, BTN_DOWN2);
+}
+
+uint8_t button_select_pressed(void) {
+    return button_debounce(&PINE, BTN_SELECT);
+}
+
+/* ======================== AFFICHAGE MENU ======================== */
+
+void display_menu(MenuOption selected) {
+    ssd1306_clear_page(2);
+    ssd1306_clear_page(4);
+    ssd1306_clear_page(6);
+
+    ssd1306_print_utf8_center(
+        selected == MENU_WRITE ? "> 1. Ecrire <" : "  1. Ecrire  ", 2);
+
+    ssd1306_print_utf8_center(
+        selected == MENU_READ ? "> 2. Lire <" : "  2. Lire  ", 4);
+
+    ssd1306_print_utf8_center(
+        selected == MENU_INFOS ? "> 3. Infos <" : "  3. Infos  ", 6);
+}
+
+void show_message(const char *msg) {
+    ssd1306_clear();
+    ssd1306_print_utf8_center(msg, 3);
+}
+
+/* ======================== PN532 ======================== */
+
+void debug_log(const char* msg) {}
 
 bool write_text_to_block(PN532* pn532, uint8_t* uid, uint8_t uid_len,
-                         uint8_t block_num, uint8_t key_type, uint8_t* key,
-                         const char* text) {
+                         uint8_t block_num, const char* text) {
     uint8_t data[16];
     memset(data, 0x00, sizeof(data));
     strncpy((char*)data, text, 16);
 
-    if (PN532_MifareClassicAuthenticateBlock(pn532, uid, uid_len, block_num, key_type, key) != PN532_ERROR_NONE)
+    if (PN532_MifareClassicAuthenticateBlock(pn532, uid, uid_len, block_num,
+                                             MIFARE_CMD_AUTH_A, KEY_DEFAULT) != PN532_ERROR_NONE)
         return false;
 
     return (PN532_MifareClassicWriteBlock(pn532, data, block_num) == PN532_ERROR_NONE);
 }
 
-/* ======================== LECTURE ======================== */
-
 bool read_block(PN532* pn532, uint8_t* uid, uint8_t uid_len,
-                uint8_t block_num, uint8_t key_type, uint8_t* key,
-                uint8_t* block_data) {
-    if (PN532_MifareClassicAuthenticateBlock(pn532, uid, uid_len, block_num, key_type, key) != PN532_ERROR_NONE)
+                uint8_t block_num, uint8_t* block_data) {
+    if (PN532_MifareClassicAuthenticateBlock(pn532, uid, uid_len, block_num,
+                                             MIFARE_CMD_AUTH_A, KEY_DEFAULT) != PN532_ERROR_NONE)
         return false;
 
     return (PN532_MifareClassicReadBlock(pn532, block_data, block_num) == PN532_ERROR_NONE);
 }
-
-/* ======================== INITIALISATION ======================== */
 
 bool init_pn532(PN532* pn532, uint8_t* fw_buff) {
     pn532->log = debug_log;
@@ -94,17 +138,13 @@ bool init_pn532(PN532* pn532, uint8_t* fw_buff) {
     return true;
 }
 
-/* ======================== DÉTECTION ======================== */
-
 int32_t detect_card(PN532* pn532, uint8_t* uid) {
     return PN532_ReadPassiveTarget(pn532, uid, PN532_MIFARE_ISO14443A, 1000);
 }
 
-void usb_log(const char *msg)
-{
+void usb_log(const char *msg) {
     Endpoint_SelectEndpoint(MYIN_EPADDR);
-    if (Endpoint_IsINReady())
-    {
+    if (Endpoint_IsINReady()) {
         uint8_t len = strlen(msg);
         if (len > MYIN_EPSIZE) len = MYIN_EPSIZE;
 
@@ -116,136 +156,224 @@ void usb_log(const char *msg)
     }
 }
 
-/* ======================== PROGRAMME PRINCIPAL ======================== */
+/* ======================== ACTIONS MENU ======================== */
 
-int main(void) {
+void action_write(void) {
+    uint8_t uid[MIFARE_UID_MAX_LENGTH];
+    const uint8_t block_num = 5;
+    const char* message = "Hello RFID!";
 
-    /*SetupHardware();
-    GlobalInterruptEnable();*/
+    ssd1306_clear();
+    ssd1306_print_utf8_center("Approchez carte", 2);
+    ssd1306_print_utf8_center("pour ecrire...", 4);
 
+    PORTD |= (1 << LED4);
+
+    int32_t uid_len = detect_card(&pn532, uid);
+    if (uid_len <= 0) {
+        show_message("Pas de carte");
+        _delay_ms(1500);
+        PORTD &= ~(1 << LED4);
+        ssd1306_clear();
+        return;
+    }
+
+    char uid_str[32] = {0};
+    for (int i = 0; i < uid_len; i++) {
+        char tmp[4];
+        sprintf(tmp, "%02X", uid[i]);
+        strcat(uid_str, tmp);
+    }
+    usb_log(uid_str);
+
+    show_message("Ecriture...");
+
+    if (write_text_to_block(&pn532, uid, uid_len, block_num, message)) {
+        show_message("Ecriture OK!");
+    } else {
+        show_message("Erreur ecriture");
+    }
+
+    _delay_ms(SELECTION_DELAY);
+    PORTD &= ~(1 << LED4);
+    ssd1306_clear();
+}
+
+void action_read(void) {
+    uint8_t uid[MIFARE_UID_MAX_LENGTH];
+    uint8_t block_data[16];
+    const uint8_t block_num = 5;
+
+    ssd1306_clear();
+    ssd1306_print_utf8_center("Approchez carte", 2);
+    ssd1306_print_utf8_center("pour lire...", 4);
+
+    PORTD |= (1 << LED5);
+
+    int32_t uid_len = detect_card(&pn532, uid);
+    if (uid_len <= 0) {
+        show_message("Pas de carte");
+        _delay_ms(1500);
+        PORTD &= ~(1 << LED5);
+        ssd1306_clear();
+        return;
+    }
+
+    show_message("Lecture...");
+
+    if (read_block(&pn532, uid, uid_len, block_num, block_data)) {
+        ssd1306_clear();
+        char line[32];
+
+        sprintf(line, "Bloc %d:", block_num);
+        ssd1306_print_utf8_center(line, 1);
+
+        sprintf(line, "%02X%02X %02X%02X %02X%02X %02X%02X",
+                block_data[0], block_data[1], block_data[2], block_data[3],
+                block_data[4], block_data[5], block_data[6], block_data[7]);
+        ssd1306_print_utf8_center(line, 3);
+
+        sprintf(line, "%02X%02X %02X%02X %02X%02X %02X%02X",
+                block_data[8], block_data[9], block_data[10], block_data[11],
+                block_data[12], block_data[13], block_data[14], block_data[15]);
+        ssd1306_print_utf8_center(line, 5);
+    } else {
+        show_message("Erreur lecture");
+    }
+
+    _delay_ms(SELECTION_DELAY);
+    PORTD &= ~(1 << LED5);
+    ssd1306_clear();
+}
+
+void action_infos(void) {
+    uint8_t uid[MIFARE_UID_MAX_LENGTH];
+
+    ssd1306_clear();
+    ssd1306_print_utf8_center("Approchez carte", 2);
+    ssd1306_print_utf8_center("pour infos...", 4);
+
+    PORTD |= (1 << LED6);
+
+    int32_t uid_len = detect_card(&pn532, uid);
+    if (uid_len <= 0) {
+        show_message("Pas de carte");
+        _delay_ms(1500);
+        PORTD &= ~(1 << LED6);
+        ssd1306_clear();
+        return;
+    }
+
+    ssd1306_clear();
+
+    char uid_str[32] = "UID: ";
+    for (int i = 0; i < uid_len; i++) {
+        char tmp[4];
+        sprintf(tmp, "%02X", uid[i]);
+        strcat(uid_str, tmp);
+        if (i < uid_len - 1) strcat(uid_str, " ");
+    }
+    ssd1306_print_utf8_center(uid_str, 2);
+
+    ssd1306_print_utf8_center("Type: MIFARE", 4);
+    ssd1306_print_utf8_center("Status: OK", 6);
+
+    usb_log(uid_str);
+
+    _delay_ms(SELECTION_DELAY);
+    PORTD &= ~(1 << LED6);
+    ssd1306_clear();
+}
+
+/* ======================== INITIALISATION ======================== */
+
+void init_system(void) {
+    init_buttons();
     ssd1306_init();
-    display_text("Initialisation...", NULL, 500);
 
-    PN532 pn532;
+    show_message("Welcome!");
+    _delay_ms(WELCOME_DELAY);
+
+    show_message("Initialisation...");
+    _delay_ms(INIT_DELAY);
+    ssd1306_clear_page(3);
+
     uint8_t fw_buff[255];
     if (!init_pn532(&pn532, fw_buff)) {
-        display_text("Erreur PN532", NULL, 0);
+        show_message("Erreur PN532");
         while (1);
     }
 
-    char fw_str[20];
-    sprintf(fw_str, "FW v%d.%d", fw_buff[1], fw_buff[2]);
-    display_text("PN532 detecte", fw_str, 500);
-
-    uint8_t uid[MIFARE_UID_MAX_LENGTH];
-    uint8_t key_default[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
-    //uint8_t key_default[6] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00}; // Clé zéro
-   // uint8_t key_default[6] = {0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5}; // Clé MAD
-   // uint8_t key_default[6] = {0xD3,0xF7,0xD3,0xF7,0xD3,0xF7};
-
-
     USB_Init();
     GlobalInterruptEnable();
+}
 
-    for (;;) {
-       USB_USBTask();
+/* ======================== MAIN ======================== */
 
-        display_text("Approchez carte", NULL, 0);
-        int32_t uid_len = detect_card(&pn532, uid);
-        if (uid_len <= 0) {
-            _delay_ms(300);
-            continue;
+int main(void) {
+    MenuOption current_selection = MENU_WRITE;
+
+    init_system();
+
+    display_menu(current_selection);
+
+    while (1) {
+        USB_USBTask();
+
+        if (button_up_pressed()) {
+            current_selection = (current_selection == 0)
+                ? MENU_COUNT - 1 : current_selection - 1;
+            display_menu(current_selection);
         }
 
-        // Affichage UID
-        char uid_str[32] = {0};
-        for (int i = 0; i < uid_len; i++) {
-            char tmp[4];
-            sprintf(tmp, "%02X", uid[i]);
-            strcat(uid_str, tmp);
-        }
-        display_text("Carte detectee", uid_str, 500);
-
-        usb_log(uid_str);
-
-        uint8_t key_type = MIFARE_CMD_AUTH_A;
-        uint8_t block_data[16];
-        uint8_t block_to_use = 5;
-        const char* message = "salut";
-
-        // Écriture
-        display_text("Ecriture...", NULL, 0);
-        if (write_text_to_block(&pn532, uid, uid_len, block_to_use, key_type, key_default, message)) {
-            display_text("Ecriture OK!", NULL, 1000);
-        } else {
-            display_text("Erreur ecriture", NULL, 1000);
+        if (button_down_pressed()) {
+            current_selection = (current_selection == MENU_COUNT - 1)
+                ? 0 : current_selection + 1;
+            display_menu(current_selection);
         }
 
-        // Lecture de vérification
-        if (read_block(&pn532, uid, uid_len, block_to_use, key_type, key_default, block_data)) {
-            display_text("Lecture OK", NULL, 500);
-            display_block_data(block_data, block_to_use);
-        } else {
-            display_text("Erreur lecture", NULL, 1000);
+        if (button_select_pressed()) {
+            switch (current_selection) {
+                case MENU_WRITE:
+                    action_write();
+                    break;
+                case MENU_READ:
+                    action_read();
+                    break;
+                case MENU_INFOS:
+                    action_infos();
+                    break;
+            }
+            display_menu(current_selection);
         }
-
-        _delay_ms(2000);
     }
 
     return 0;
 }
 
-/** Configures the board hardware and chip peripherals for the demo's functionality. */
- void SetupHardware(void)
- {
- #if (ARCH == ARCH_AVR8)
-   /* Disable watchdog if enabled by bootloader/fuses */
-   MCUSR &= ~(1 << WDRF);
-   wdt_disable();
+/* ======================== LUFA HANDLERS ======================== */
 
-   /* Disable clock division */
-   clock_prescale_set(clock_div_1);
- #elif (ARCH == ARCH_XMEGA)
-   /* Start the PLL to multiply the 2MHz RC oscillator to 32MHz and switch the CPU core to run from it */
-   XMEGACLK_StartPLL(CLOCK_SRC_INT_RC2MHZ, 2000000, F_CPU);
-   XMEGACLK_SetCPUClockSource(CLOCK_SRC_PLL);
+void SetupHardware(void) {
+#if (ARCH == ARCH_AVR8)
+    MCUSR &= ~(1 << WDRF);
+    wdt_disable();
+    clock_prescale_set(clock_div_1);
+#elif (ARCH == ARCH_XMEGA)
+    XMEGACLK_StartPLL(CLOCK_SRC_INT_RC2MHZ, 2000000, F_CPU);
+    XMEGACLK_SetCPUClockSource(CLOCK_SRC_PLL);
+    XMEGACLK_StartInternalOscillator(CLOCK_SRC_INT_RC32MHZ);
+    XMEGACLK_StartDFLL(CLOCK_SRC_INT_RC32MHZ, DFLL_REF_INT_USBSOF, F_USB);
+    PMIC.CTRL = PMIC_LOLVLEN_bm | PMIC_MEDLVLEN_bm | PMIC_HILVLEN_bm;
+#endif
+    USB_Init();
+}
 
-   /* Start the 32MHz internal RC oscillator and start the DFLL to increase it to 48MHz using the USB SOF as a reference */
-   XMEGACLK_StartInternalOscillator(CLOCK_SRC_INT_RC32MHZ);
-   XMEGACLK_StartDFLL(CLOCK_SRC_INT_RC32MHZ, DFLL_REF_INT_USBSOF, F_USB);
+void EVENT_USB_Device_Connect(void) {}
+void EVENT_USB_Device_Disconnect(void) {}
 
-   PMIC.CTRL = PMIC_LOLVLEN_bm | PMIC_MEDLVLEN_bm | PMIC_HILVLEN_bm;
- #endif
+void EVENT_USB_Device_ConfigurationChanged(void) {
+    Endpoint_ConfigureEndpoint(MYIN_EPADDR,  EP_TYPE_INTERRUPT, MYIN_EPSIZE, 1);
+    Endpoint_ConfigureEndpoint(MYOUT_EPADDR, EP_TYPE_INTERRUPT, MYOUT_EPSIZE, 1);
+}
 
-   /* Hardware Initialization */
-   USB_Init();
- }
-
- /** Event handler for the USB_Connect event. This indicates that the device is enumerating via the status LEDs. */
- void EVENT_USB_Device_Connect(void)
- {
- }
-
- /** Event handler for the USB_Disconnect event. This indicates that the device is no longer connected to a host via
-  *  the status LEDs.
-  */
- void EVENT_USB_Device_Disconnect(void)
- {
- }
-
- /** Event handler for the USB_ConfigurationChanged event. This is fired when the host set the current configuration
-  *  of the USB device after enumeration - the device endpoints are configured.
-  */
- void EVENT_USB_Device_ConfigurationChanged(void)
- {
-     Endpoint_ConfigureEndpoint(MYIN_EPADDR,  EP_TYPE_INTERRUPT, MYIN_EPSIZE, 1);
-     Endpoint_ConfigureEndpoint(MYOUT_EPADDR, EP_TYPE_INTERRUPT, MYOUT_EPSIZE, 1);
- }
-
- /** Event handler for the USB_ControlRequest event. This is used to catch and process control requests sent to
-  *  the device from the USB host before passing along unhandled control requests to the library for processing
-  *  internally.
-  */
- void EVENT_USB_Device_ControlRequest(void)
- {
- }
+void EVENT_USB_Device_ControlRequest(void) {}

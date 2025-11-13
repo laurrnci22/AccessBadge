@@ -23,5 +23,6 @@ void ssd1306_send_data_byte(uint8_t data);
 void ssd1306_send_data(const uint8_t *buf, size_t len);
 void ssd1306_set_cursor(uint8_t page, uint8_t col); // page: 0..7, col: 0..127
 void ssd1306_clear(void);
+void ssd1306_clear_page(uint8_t page);
 
 #endif //SSD1306_AVR_SSD1306_H
