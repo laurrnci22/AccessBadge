@@ -6,7 +6,6 @@
 #include <util/delay.h>
 #include <ctype.h>
 #include <stdbool.h>
-#include <avr/io.h>
 
 #include "ssd1306.h"
 #include "ssd1306_text.h"
@@ -118,7 +117,7 @@ void action_write(void) {
 
     if (!received) {
         show_message("Timeout USB");
-        _delay_ms(1500);
+        _delay_ms(500);
         PORTD &= ~(1 << LED4);
         ssd1306_clear();
         return;
@@ -127,7 +126,7 @@ void action_write(void) {
     // Vérifier commande 'W' (Write)
     if (usb_buffer[0] != 'W') {
         show_message("Commande invalide");
-        _delay_ms(1500);
+        _delay_ms(500);
         PORTD &= ~(1 << LED4);
         ssd1306_clear();
         return;
@@ -140,7 +139,7 @@ void action_write(void) {
 
     if (name_len > 16 || prenom_len > 16 || password_len > 16) {
         show_message("Donnees trop longues");
-        _delay_ms(1500);
+        _delay_ms(500);
         PORTD &= ~(1 << LED4);
         ssd1306_clear();
         return;
@@ -167,13 +166,13 @@ void action_write(void) {
     ssd1306_print_utf8_center(display, 5);
     ssd1306_print_utf8_center("Approchez carte", 7);
 
-    _delay_ms(1000);
+    _delay_ms(500);
 
     // Détecter la carte
     int32_t uid_len = detect_card(&pn532, uid);
     if (uid_len <= 0) {
         show_message("Pas de carte");
-        _delay_ms(1500);
+        _delay_ms(500);
         PORTD &= ~(1 << LED4);
         ssd1306_clear();
         return;
