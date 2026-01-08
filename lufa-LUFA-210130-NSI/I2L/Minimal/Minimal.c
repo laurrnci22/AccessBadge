@@ -32,8 +32,14 @@ void debug_log(const char* msg) {}
 bool write_text_to_block(PN532* pn532, uint8_t* uid, uint8_t uid_len,
                          uint8_t block_num, const char* text) {
     uint8_t data[16];
-    memset(data, 0x00, sizeof(data));
-    strncpy((char*)data, text, 16);
+    // Initialiser à 0
+    memset(data, 0x00, 16);
+    
+    // COPIE BRUTE : On force la copie, même sans caractère nul
+    // On utilise strlen pour savoir combien copier, max 16
+    uint8_t len = strlen(text);
+    if (len > 16) len = 16;
+    memcpy(data, text, len);
 
     if (PN532_MifareClassicAuthenticateBlock(pn532, uid, uid_len, block_num,
                                              MIFARE_CMD_AUTH_A, KEY_DEFAULT) != PN532_ERROR_NONE)
@@ -179,13 +185,14 @@ void action_write(void) {
     }
 
     show_message("Ecriture...");
-
+    _delay_ms(20);
     bool success = true;
 
     // Écrire nom (bloc 1)
-    if (!write_text_to_block(&pn532, uid, uid_len, name_block, (char*)name_data)) {
+    if (!write_text_to_block(&pn532, uid, uid_len, name_block, name_data)) {
         success = false;
     }
+    _delay_ms(20);
 
     // Écrire prénom (bloc 2)
     if (success && !write_text_to_block(&pn532, uid, uid_len, prenom_block, (char*)prenom_data)) {
