@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 import usb1
 import time
 from flask import Flask, jsonify, request
@@ -66,13 +65,13 @@ def write_to_badge(nom, prenom, password):
         print("\n=== ENVOI DONNÉES BADGE ===")
         print(f"Nom: {nom} | Prénom: {prenom} | Pass: {password}")
         usb_handle.interruptWrite(EP_OUT, bytes(packet), timeout=5000)
-        print("⏳ En attente de la réponse...")
+        print("En attente de la réponse...")
 
         try:
             response = usb_handle.interruptRead(EP_IN, EP_SIZE, timeout=10000)
             if len(response) > 0 and response[0] == ord('W'):
                 success = response[1] == 0x01
-                print(f"Réponse reçue: {'✅ OK' if success else '❌ ERREUR'}")
+                print(f"Réponse reçue: {'OK' if success else 'ERREUR'}")
                 return {'success': success, 'message': 'Écriture réussie' if success else 'Erreur lors de l\'écriture'}
             return {'success': False, 'error': 'Réponse invalide'}
 
@@ -89,7 +88,7 @@ def monitor_usb():
     global current_card_info, usb_handle, usb_context
 
     if usb_context is None or usb_handle is None:
-        print("❌ Aucun périphérique USB initialisé, arrêt du monitoring.")
+        print("Aucun périphérique USB initialisé, arrêt du monitoring.")
         return
 
     print("=== Monitoring USB actif ===\n")
@@ -117,7 +116,7 @@ def monitor_usb():
         except usb1.USBErrorTimeout:
             pass
         except usb1.USBErrorNoDevice:
-            print("\n❌ Périphérique déconnecté.")
+            print("\nPériphérique déconnecté.")
             usb_handle = None
             break
         except Exception as e:
@@ -145,7 +144,7 @@ def get_current_info():
         return jsonify(current_card_info)
     return jsonify({'error': 'Aucune carte scannée'}), 404
 
-@app.route('/api/nfc/write', methods=['POST'])
+@app.route('/api/nfc/register', methods=['POST'])
 def write_nfc():
     global usb_handle
     if usb_handle is None:
@@ -179,29 +178,17 @@ if __name__ == '__main__':
     flask_thread = threading.Thread(target=run_flask, daemon=True)
     flask_thread.start()
 
-    print("="*60)
-    print("🌐 API Flask démarrée sur http://localhost:5000")
-    print("Endpoints :")
-    print("  GET  /api/nfc/status  → État du système")
-    print("  GET  /api/nfc/info    → Infos dernière carte")
-    print("  POST /api/nfc/write   → Écrire sur badge")
-    print("\nExemple curl :")
-    print('  curl -X POST http://localhost:5000/api/nfc/write \\')
-    print('    -H "Content-Type: application/json" \\')
-    print('    -d \'{"nom":"Alice","prenom":"Smith","password":"Pass123"}\'')
-    print("="*60 + "\n")
-
     # === INITIALISATION DU CONTEXTE USB GLOBAL ===
     try:
         usb_context = usb1.USBContext()
         usb_handle = usb_context.openByVendorIDAndProductID(VENDOR_ID, PRODUCT_ID)
 
         if usb_handle is None:
-            print("❌ ERREUR : périphérique LUFA non trouvé.")
+            print("ERREUR : périphérique LUFA non trouvé.")
             print("Vérifie les VID/PID et la connexion du lecteur.")
             sys.exit(1)
 
-        print(f"✅ Périphérique trouvé (VID:0x{VENDOR_ID:04X}, PID:0x{PRODUCT_ID:04X})")
+        print(f"Périphérique trouvé (VID:0x{VENDOR_ID:04X}, PID:0x{PRODUCT_ID:04X})")
 
         try:
             if usb_handle.kernelDriverActive(0):
@@ -210,12 +197,12 @@ if __name__ == '__main__':
             pass
 
         usb_handle.claimInterface(0)
-        print("✅ Interface 0 revendiquée, lecture/écriture prêtes.\n")
+        print("Interface 0 revendiquée, lecture/écriture prêtes.\n")
 
         monitor_usb()
 
     except usb1.USBErrorAccess:
-        print("\n⚠️  Permission refusée. Lance le script avec sudo :")
+        print("\nPermission refusée. Lance le script avec sudo :")
         print("    sudo python3 usb_service.py")
     except Exception as e:
         print(f"\nErreur d'initialisation USB : {e}")
