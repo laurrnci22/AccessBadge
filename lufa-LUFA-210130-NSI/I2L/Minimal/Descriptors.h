@@ -59,7 +59,6 @@
 		 typedef struct
 		 {
 			 USB_Descriptor_Configuration_Header_t Config;
-			 // TODO c'est ici qu'on rajoute les interfaces 
 			 USB_Descriptor_Interface_t  Interface;
 			 USB_Descriptor_Endpoint_t EPin; 
 			 USB_Descriptor_Endpoint_t EPout;
