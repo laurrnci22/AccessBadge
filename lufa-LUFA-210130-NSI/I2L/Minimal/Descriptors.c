@@ -54,7 +54,7 @@
  
 	 .Endpoint0Size          = FIXED_CONTROL_ENDPOINT_SIZE,
  
-	 .VendorID               = 0x4242, // TODO ici c'est le vendeur 
+	 .VendorID               = 0x4242, 
 	 .ProductID              = 0x0001,
 	 .ReleaseNumber          = VERSION_BCD(0,0,1),
  
