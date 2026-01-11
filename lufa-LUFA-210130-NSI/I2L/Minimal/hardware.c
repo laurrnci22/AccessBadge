@@ -1,7 +1,3 @@
-//
-// Created by Adjy Sedar Desir on 13/11/2025.
-//
-
 #include "hardware.h"
 #include <util/delay.h>
 

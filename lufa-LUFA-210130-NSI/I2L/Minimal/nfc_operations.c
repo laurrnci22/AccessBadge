@@ -1,7 +1,3 @@
-//
-// Created by Adjy Sedar Desir on 13/11/2025.
-//
-
 #include "nfc_operations.h"
 #include "pn532_i2c.h"
 #include <string.h>

@@ -211,15 +211,8 @@ void action_infos(void) {
 
     ui_format_and_print_uid(uid, uid_len);
 
-    helper_read_block(&pn532,BLOCK_ADDR_NAME,   uid, uid_len, NULL, "Nom",    3);
-    helper_read_block(&pn532,BLOCK_ADDR_PRENOM, uid, uid_len, NULL, "Prenom", 5);
-
-    // 2. Log UID sur USB (fonctionnalité d'origine)
-    char uid_str[32] = "UID:";
-    for (int i=0; i<uid_len; i++) {
-        char t[4]; snprintf(t,4,"%02X", uid[i]); strcat(uid_str, t);
-    }
-    usb_send_log(uid_str);
+    helper_read_block(&pn532, BLOCK_ADDR_NAME,   uid, uid_len, NULL, "Nom",    3);
+    helper_read_block(&pn532, BLOCK_ADDR_PRENOM, uid, uid_len, NULL, "Prenom", 5);
 
     _delay_ms(SELECTION_DELAY);
 
