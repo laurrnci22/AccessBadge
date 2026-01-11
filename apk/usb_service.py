@@ -19,9 +19,6 @@ current_card_info = None
 usb_handle = None
 usb_context = None
 
-# =========================================================
-# === PARSEUR DE DONNÉES DU BADGE =========================
-# =========================================================
 def parse_card_data(data):
     if len(data) < 56:
         print(f"Données trop courtes: {len(data)} octets")
@@ -39,9 +36,7 @@ def parse_card_data(data):
 
     return {'uid': uid, 'nom': nom, 'prenom': prenom, 'password': password}
 
-# =========================================================
-# === ÉCRITURE SUR BADGE NFC ==============================
-# =========================================================
+
 def write_to_badge(nom, prenom, password):
     global usb_handle
 
@@ -81,9 +76,7 @@ def write_to_badge(nom, prenom, password):
     except Exception as e:
         return {'success': False, 'error': str(e)}
 
-# =========================================================
-# === MONITORING DU LECTEUR USB ===========================
-# =========================================================
+
 def monitor_usb():
     global current_card_info, usb_handle, usb_context
 
@@ -127,9 +120,7 @@ def monitor_usb():
 
         time.sleep(0.05)
 
-# =========================================================
-# === API FLASK ===========================================
-# =========================================================
+# API
 @app.route('/api/nfc/status')
 def nfc_status():
     return jsonify({
@@ -168,9 +159,7 @@ def write_nfc():
     result = write_to_badge(nom, prenom, password)
     return jsonify(result), (200 if result['success'] else 500)
 
-# =========================================================
-# === MAIN =================================================
-# =========================================================
+# Main
 if __name__ == '__main__':
     def run_flask():
         app.run(host='0.0.0.0', port=5000, debug=False, use_reloader=False)
@@ -178,7 +167,6 @@ if __name__ == '__main__':
     flask_thread = threading.Thread(target=run_flask, daemon=True)
     flask_thread.start()
 
-    # === INITIALISATION DU CONTEXTE USB GLOBAL ===
     try:
         usb_context = usb1.USBContext()
         usb_handle = usb_context.openByVendorIDAndProductID(VENDOR_ID, PRODUCT_ID)
