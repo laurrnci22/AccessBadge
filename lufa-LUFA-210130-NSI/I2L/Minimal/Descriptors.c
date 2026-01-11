@@ -87,7 +87,6 @@
 			 .MaxPowerConsumption    = USB_CONFIG_POWER_MA(100)
 		 },
  
-	 // TODO
 	 .Interface = 
 			 {
 				 .Header                 = {.Size = sizeof(USB_Descriptor_Interface_t), .Type = DTYPE_Interface},
